@@ -5,24 +5,43 @@ on:
   schedule:
     - cron: "0 12 * * *"
   workflow_dispatch:
+
+# GITHUB_TOKEN solo necesita poder hacer push de los SVG.
+permissions:
+  contents: write
+
+# Evita que dos ejecuciones hagan push a la vez.
+concurrency:
+  group: update-stats
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # Se usa el GITHUB_TOKEN por defecto: sus push no vuelven a disparar el workflow.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          token: ${{ secrets.ACCESS_TOKEN }}
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+          python-version: '3.12'
+          cache: pip
       - run: pip install -r requirements.txt
+
+      # Guarda el caché de líneas de código entre ejecuciones.
+      - uses: actions/cache@v4
+        with:
+          path: cache
+          key: loc-cache-${{ github.run_id }}
+          restore-keys: loc-cache-
+
       - run: python statistics.py
         env:
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-          USER_NAME: ${{ secrets.USER_NAME }}
+          USER_NAME: ${{ github.repository_owner }}
+
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dark_mode.svg light_mode.svg statistics.py
+          git add dark_mode.svg light_mode.svg
           git diff --staged --quiet || git commit -m "Actualizar stats"
           git push
